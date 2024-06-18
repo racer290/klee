@@ -7,15 +7,27 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "klee/Config/Version.h"
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+#include "PassesNew.h"
+#else
 #include "Passes.h"
+#endif
 
 #include <set>
 
 using namespace llvm;
 
+#if LLVM_VERSION_CODE < LLVM_VERSION(17, 0)
 char klee::PhiCleanerPass::ID = 0;
+#endif
 
-bool klee::PhiCleanerPass::runOnFunction(Function &f) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+PreservedAnalyses klee::PhiCleanerPass::run(llvm::Function &f, llvm::FunctionAnalysisManager &AM)
+#else
+bool klee::PhiCleanerPass::runOnFunction(Function &f)
+#endif
+{
   bool changed = false;
   
   for (Function::iterator b = f.begin(), be = f.end(); b != be; ++b) {
@@ -79,5 +91,12 @@ bool klee::PhiCleanerPass::runOnFunction(Function &f) {
     }
   }
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+  PreservedAnalyses preserved = PreservedAnalyses::none();
+  if (!changed)
+    preserved.preserveSet<CFGAnalyses>();
+  return preserved;
+#else
   return changed;
+#endif
 }

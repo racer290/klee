@@ -6,8 +6,14 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-#include "Passes.h"
 #include "klee/Config/Version.h"
+
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+#include "PassesNew.h"
+#else
+#include "Passes.h"
+#endif
+
 #include "klee/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -164,6 +170,23 @@ bool checkInstruction(const Instruction *i) {
 
 namespace klee {
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+
+AnalysisKey InstructionOperandTypeCheckPass::Key;
+InstructionOperandTypeCheckPass::Result InstructionOperandTypeCheckPass::run(llvm::Function &F, llvm::FunctionAnalysisManager&) {
+  bool instructionOperandsConform = true;
+  for (Function::iterator bi = F.begin(), be = F.end(); bi != be; ++bi) {
+    for (BasicBlock::iterator ii = bi->begin(), ie = bi->end(); ii != ie;
+         ++ii) {
+      Instruction *i = &*ii;
+      instructionOperandsConform &= checkInstruction(i);
+    }
+  }
+  return instructionOperandsConform;
+}
+
+#else
+
 char InstructionOperandTypeCheckPass::ID = 0;
 
 bool InstructionOperandTypeCheckPass::runOnModule(Module &M) {
@@ -180,4 +203,6 @@ bool InstructionOperandTypeCheckPass::runOnModule(Module &M) {
 
   return false;
 }
+
+#endif
 }

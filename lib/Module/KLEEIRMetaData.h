@@ -11,6 +11,7 @@
 #define KLEE_KLEEIRMETADATA_H
 
 #include "llvm/IR/MDBuilder.h"
+#include "llvm/IR/Instruction.h"
 
 namespace klee {
 

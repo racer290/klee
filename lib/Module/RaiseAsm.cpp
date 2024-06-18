@@ -7,8 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Passes.h"
 #include "klee/Config/Version.h"
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+#include "PassesNew.h"
+#else
+#include "Passes.h"
+#endif
 #include "klee/Support/ErrorHandling.h"
 
 #include "klee/Support/CompilerWarning.h"
@@ -33,8 +37,6 @@ DISABLE_WARNING_POP
 using namespace llvm;
 using namespace klee;
 
-char RaiseAsmPass::ID = 0;
-
 Function *RaiseAsmPass::getIntrinsic(llvm::Module &M, unsigned IID, Type **Tys,
                                      unsigned NumTys) {
   return Intrinsic::getDeclaration(&M, (llvm::Intrinsic::ID) IID,
@@ -43,7 +45,12 @@ Function *RaiseAsmPass::getIntrinsic(llvm::Module &M, unsigned IID, Type **Tys,
 
 // FIXME: This should just be implemented as a patch to
 // X86TargetAsmInfo.cpp, then everyone will benefit.
-bool RaiseAsmPass::runOnInstruction(Module &M, Instruction *I) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+bool RaiseAsmPass::processInstruction(llvm::Triple& triple, const llvm::TargetLowering* TLI, llvm::Instruction* I)
+#else
+bool RaiseAsmPass::runOnInstruction(Module &M, Instruction *I)
+#endif
+{
   // We can just raise inline assembler using calls
   CallInst *ci = dyn_cast<CallInst>(I);
   if (!ci)
@@ -75,6 +82,52 @@ bool RaiseAsmPass::runOnInstruction(Module &M, Instruction *I) {
 
   return false;
 }
+
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+
+PreservedAnalyses RaiseAsmPass::run(llvm::Function& F, llvm::FunctionAnalysisManager&) {
+  using namespace llvm;
+  bool changed = false;
+  std::string Err;
+
+  Module& M = *F.getParent();
+  // Use target triple from the module if possible.
+  std::string TargetTriple = M.getTargetTriple();
+  if (TargetTriple.empty())
+    TargetTriple = llvm::sys::getDefaultTargetTriple();
+  const Target *Target = TargetRegistry::lookupTarget(TargetTriple, Err);
+
+  const TargetLowering* TLI;
+  TargetMachine * TM = 0;
+  Triple triple;
+  if (Target == 0) {
+    klee_warning("Warning: unable to select target: %s", Err.c_str());
+    TLI = 0;
+  } else {
+    TM = Target->createTargetMachine(TargetTriple, "", "", TargetOptions(),
+                                     std::nullopt);
+
+    TLI = TM->getSubtargetImpl(*(M.begin()))->getTargetLowering();
+
+    triple = llvm::Triple(TargetTriple);
+  }
+
+  for (BasicBlock& BB : F) {
+    for (BasicBlock::iterator ii = BB.begin(), ie = BB.end(); ii != ie;) {
+      Instruction *i = &*ii;
+      ++ii;  
+      changed |= processInstruction(triple, TLI, i);
+    }
+  }
+
+  delete TM;
+
+  return changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
+}
+
+#else
+
+char RaiseAsmPass::ID = 0;
 
 bool RaiseAsmPass::runOnModule(Module &M) {
   bool changed = false;
@@ -118,3 +171,5 @@ bool RaiseAsmPass::runOnModule(Module &M) {
 
   return changed;
 }
+
+#endif

@@ -7,9 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Passes.h"
-
 #include "klee/Config/Version.h"
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+#include "PassesNew.h"
+#else
+#include "Passes.h"
+#endif
+
 #include "klee/Support/ErrorHandling.h"
 
 #include "klee/Support/CompilerWarning.h"
@@ -36,6 +40,26 @@ using namespace llvm;
 
 namespace klee {
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+
+llvm::PreservedAnalyses IntrinsicCleanerPass::run(llvm::Module &M, llvm::ModuleAnalysisManager &AM) {
+  DataLayout TD(&M);
+  IntrinsicLowering* IL = new IntrinsicLowering(TD);
+
+  bool dirty = false;
+  for (Module::iterator f = M.begin(), fe = M.end(); f != fe; ++f)
+    for (Function::iterator b = f->begin(), be = f->end(); b != be; ++b)
+      dirty |= runOnBasicBlock(TD, IL, *b, M);
+
+  if (Function *Declare = M.getFunction("llvm.trap")) {
+    Declare->eraseFromParent();
+    dirty = true;
+  }
+  return dirty ? PreservedAnalyses::none() : PreservedAnalyses::all();
+}
+
+#else
+
 char IntrinsicCleanerPass::ID;
 
 bool IntrinsicCleanerPass::runOnModule(Module &M) {
@@ -51,7 +75,14 @@ bool IntrinsicCleanerPass::runOnModule(Module &M) {
   return dirty;
 }
 
-bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M) {
+#endif
+
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+bool IntrinsicCleanerPass::runOnBasicBlock(const llvm::DataLayout& DataLayout, llvm::IntrinsicLowering* IL, llvm::BasicBlock &b, llvm::Module &M)
+#else
+bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M)
+#endif
+{
   bool dirty = false;
   LLVMContext &ctx = M.getContext();
 

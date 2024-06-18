@@ -14,8 +14,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Passes.h"
 #include "klee/Config/Version.h"
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+#include "PassesNew.h"
+#else
+#include "Passes.h"
+#endif
+
 #include "klee/Support/CompilerWarning.h"
 DISABLE_WARNING_PUSH
 DISABLE_WARNING_DEPRECATED_DECLARATIONS
@@ -29,7 +34,9 @@ using namespace llvm;
 
 namespace klee {
 
+#if LLVM_VERSION_CODE < LLVM_VERSION(17, 0)
 char LowerSwitchPass::ID = 0;
+#endif
 
 // The comparison function for sorting the switch case values in the vector.
 struct SwitchCaseCmp {
@@ -42,7 +49,12 @@ struct SwitchCaseCmp {
   }
 };
 
-bool LowerSwitchPass::runOnFunction(Function &F) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+PreservedAnalyses LowerSwitchPass::run(Function &F, FunctionAnalysisManager &AM)
+#else
+bool LowerSwitchPass::runOnFunction(Function &F)
+#endif
+{
   bool changed = false;
 
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ) {
@@ -55,7 +67,11 @@ bool LowerSwitchPass::runOnFunction(Function &F) {
     }
   }
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+  return changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
+#else
   return changed;
+#endif
 }
 
 // switchConvert - Convert the switch statement into a linear scan

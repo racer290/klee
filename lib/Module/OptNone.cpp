@@ -7,9 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Passes.h"
-
 #include "klee/Config/Version.h"
+
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+#include "PassesNew.h"
+#else
+#include "Passes.h"
+#endif
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/Function.h"
@@ -17,6 +21,38 @@
 #include "llvm/IR/Module.h"
 
 namespace klee {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(17, 0)
+
+using namespace llvm;
+
+PreservedAnalyses OptNonePass::run(Function &F, FunctionAnalysisManager &AM) {
+  // Skip if already annotated
+  if (F.hasFnAttribute(Attribute::OptimizeNone))
+    goto is_clean;
+
+  for (BasicBlock& B : F) {
+    for (Instruction& instr : B) {
+      if (isa<CastInst>(instr) || isa<InvokeInst>(instr)) {
+        CallBase* ci = dyn_cast<CallBase>(&instr);
+        Function* callee = ci->getCalledFunction();
+
+        if (callee != nullptr
+         && callee->hasName()
+         && callee->getName().startswith("klee_")) {
+
+          F.addFnAttr(Attribute::OptimizeNone);
+          F.addFnAttr(Attribute::NoInline);
+          return PreservedAnalyses::none();
+        }
+      }
+    }
+  }
+
+is_clean:
+    return PreservedAnalyses::all();
+}
+
+#else
 
 char OptNonePass::ID;
 
@@ -48,4 +84,6 @@ bool OptNonePass::runOnModule(llvm::Module &M) {
 
   return changed;
 }
+
+#endif
 } // namespace klee
